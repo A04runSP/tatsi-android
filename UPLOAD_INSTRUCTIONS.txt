@@ -1,0 +1,13 @@
+TATSI Android source package for the correct repository: A04runSP/tatsi-android
+
+Upload the contents of this archive to the repository root (not the archive itself).
+It includes:
+- settings.gradle.kts and root build.gradle.kts
+- app module Gradle file, manifest, and Kotlin sources
+- MEDIA3_IMPLEMENTATION_NOTES.md
+- README.md
+- .github/workflows/android-build.yml (builds APK and uploads it as an Actions artifact)
+
+The Kotlin coroutine await dependency was added to app/build.gradle.kts.
+
+Do not upload these files to A04runSP/ard-songvault; that is a separate repository.
