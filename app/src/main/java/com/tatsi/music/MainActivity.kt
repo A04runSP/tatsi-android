@@ -78,6 +78,7 @@ fun TatsiMainApp(
     onModeChange: (TatsiMode) -> Unit
 ) {
     val tokens = LocalTatsiTokens.current
+    val context = LocalContext.current
     var activeTab by remember { mutableStateOf(AppTab.HOME) }
     var tracks by remember { mutableStateOf(TatsiRepository.tracks) }
     val likedPrefs = remember(context) { context.getSharedPreferences("tatsi_liked_tracks", android.content.Context.MODE_PRIVATE) }
@@ -89,7 +90,6 @@ fun TatsiMainApp(
     var isNowPlayingOpen by remember { mutableStateOf(false) }
 
     val currentTrack = tracks.getOrNull(currentTrackIndex) ?: TatsiRepository.tracks.first()
-    val context = LocalContext.current
     val lifecycleOwner = LocalLifecycleOwner.current
     var mediaController by remember { mutableStateOf<MediaController?>(null) }
     var controllerFuture by remember { mutableStateOf<ListenableFuture<MediaController>?>(null) }
@@ -100,7 +100,7 @@ fun TatsiMainApp(
     ) { granted ->
         hasAudioPermission = granted
         if (granted) {
-            val savedLikes = likedPrefs.getStringSet("liked_ids", emptySet())?.toSet() ?: emptySet()
+            val savedLikes = likedPrefs.getStringSet("liked_ids", emptySet<String>())?.toSet() ?: emptySet<String>()
             tracks = DeviceMusicLibrary.scan(context, savedLikes)
             currentTrackIndex = 0
         }
