@@ -126,7 +126,8 @@ fun TatsiMainApp(
         while (isPlaying && mediaController != null) {
             val c = mediaController
             val duration = c?.duration ?: 0L
-            if (duration > 0L) progress = (c.currentPosition.toFloat() / duration.toFloat()).coerceIn(0f, 1f)
+            val position = c?.currentPosition ?: 0L
+            if (duration > 0L) progress = (position.toFloat() / duration.toFloat()).coerceIn(0f, 1f)
             delay(400L)
         }
     }
