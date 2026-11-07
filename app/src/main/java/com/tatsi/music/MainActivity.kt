@@ -1,6 +1,9 @@
 package com.tatsi.music
 
 import android.os.Bundle
+import android.Manifest
+import android.content.pm.PackageManager
+import android.os.Build
 import android.content.ComponentName
 import android.net.Uri
 import androidx.activity.ComponentActivity
@@ -77,6 +80,7 @@ fun TatsiMainApp(
     val tokens = LocalTatsiTokens.current
     var activeTab by remember { mutableStateOf(AppTab.HOME) }
     var tracks by remember { mutableStateOf(TatsiRepository.tracks) }
+    val likedPrefs = remember(context) { context.getSharedPreferences("tatsi_liked_tracks", android.content.Context.MODE_PRIVATE) }
     val playlists = remember { TatsiRepository.playlists }
 
     var currentTrackIndex by remember { mutableIntStateOf(0) }
@@ -84,11 +88,32 @@ fun TatsiMainApp(
     var progress by remember { mutableFloatStateOf(0.41f) }
     var isNowPlayingOpen by remember { mutableStateOf(false) }
 
-    val currentTrack = tracks[currentTrackIndex]
+    val currentTrack = tracks.getOrNull(currentTrackIndex) ?: TatsiRepository.tracks.first()
     val context = LocalContext.current
     val lifecycleOwner = LocalLifecycleOwner.current
     var mediaController by remember { mutableStateOf<MediaController?>(null) }
     var controllerFuture by remember { mutableStateOf<ListenableFuture<MediaController>?>(null) }
+    val audioPermission = if (Build.VERSION.SDK_INT >= 33) Manifest.permission.READ_MEDIA_AUDIO else Manifest.permission.READ_EXTERNAL_STORAGE
+    var hasAudioPermission by remember { mutableStateOf(ContextCompat.checkSelfPermission(context, audioPermission) == PackageManager.PERMISSION_GRANTED) }
+    val requestAudioPermission = androidx.activity.compose.rememberLauncherForActivityResult(
+        contract = androidx.activity.result.contract.ActivityResultContracts.RequestPermission()
+    ) { granted ->
+        hasAudioPermission = granted
+        if (granted) {
+            val savedLikes = likedPrefs.getStringSet("liked_ids", emptySet())?.toSet() ?: emptySet()
+            tracks = DeviceMusicLibrary.scan(context, savedLikes)
+            currentTrackIndex = 0
+        }
+    }
+    LaunchedEffect(hasAudioPermission) {
+        if (hasAudioPermission) {
+            val savedLikes = likedPrefs.getStringSet("liked_ids", emptySet())?.toSet() ?: emptySet()
+            tracks = DeviceMusicLibrary.scan(context, savedLikes)
+            currentTrackIndex = 0
+        } else {
+            requestAudioPermission.launch(audioPermission)
+        }
+    }
 
     // Connect the UI to the service-owned player. The service remains alive beyond Activity recreation.
     LaunchedEffect(context) {
@@ -133,6 +158,7 @@ fun TatsiMainApp(
     }
 
     fun playTrack(index: Int) {
+        if (tracks.isEmpty()) return
         currentTrackIndex = index.coerceIn(0, tracks.lastIndex)
         val track = tracks[currentTrackIndex]
         val uri = track.audioUri
@@ -146,6 +172,7 @@ fun TatsiMainApp(
         }
     }
     fun skipTo(index: Int) {
+        if (tracks.isEmpty()) return
         val nextIndex = (index + tracks.size) % tracks.size
         playTrack(nextIndex)
     }
@@ -236,9 +263,8 @@ fun TatsiMainApp(
                             playTrack(tracks.indexOfFirst { it.id == selected.id }.coerceAtLeast(0))
                         },
                         onToggleLike = { target ->
-                            tracks = tracks.map {
-                                if (it.id == target.id) it.copy(isLiked = !it.isLiked) else it
-                            }
+                            tracks = tracks.map { if (it.id == target.id) it.copy(isLiked = !it.isLiked) else it }
+                            likedPrefs.edit().putStringSet("liked_ids", tracks.filter { it.isLiked }.map { it.id }.toSet()).apply()
                         },
                         onOpenNowPlaying = { isNowPlayingOpen = true }
                     )
@@ -251,9 +277,8 @@ fun TatsiMainApp(
                             playTrack(tracks.indexOfFirst { it.id == selected.id }.coerceAtLeast(0))
                         },
                         onToggleLike = { target ->
-                            tracks = tracks.map {
-                                if (it.id == target.id) it.copy(isLiked = !it.isLiked) else it
-                            }
+                            tracks = tracks.map { if (it.id == target.id) it.copy(isLiked = !it.isLiked) else it }
+                            likedPrefs.edit().putStringSet("liked_ids", tracks.filter { it.isLiked }.map { it.id }.toSet()).apply()
                         }
                     )
 
