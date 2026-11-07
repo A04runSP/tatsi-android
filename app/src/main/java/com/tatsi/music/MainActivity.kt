@@ -1,9 +1,6 @@
 package com.tatsi.music
 
 import android.os.Bundle
-import android.Manifest
-import android.content.pm.PackageManager
-import android.os.Build
 import android.content.ComponentName
 import android.net.Uri
 import androidx.activity.ComponentActivity
@@ -17,7 +14,6 @@ import androidx.media3.common.Player
 import androidx.media3.session.MediaController
 import androidx.media3.session.SessionToken
 import com.google.common.util.concurrent.ListenableFuture
-import androidx.core.content.ContextCompat
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
@@ -80,7 +76,7 @@ fun TatsiMainApp(
     val tokens = LocalTatsiTokens.current
     val context = LocalContext.current
     var activeTab by remember { mutableStateOf(AppTab.HOME) }
-    var tracks by remember { mutableStateOf(TatsiRepository.tracks) }
+    var tracks by remember { mutableStateOf(emptyList<Track>()) }
     val likedPrefs = remember(context) { context.getSharedPreferences("tatsi_liked_tracks", android.content.Context.MODE_PRIVATE) }
     val playlists = remember { TatsiRepository.playlists }
 
@@ -93,28 +89,30 @@ fun TatsiMainApp(
     val lifecycleOwner = LocalLifecycleOwner.current
     var mediaController by remember { mutableStateOf<MediaController?>(null) }
     var controllerFuture by remember { mutableStateOf<ListenableFuture<MediaController>?>(null) }
-    val audioPermission = if (Build.VERSION.SDK_INT >= 33) Manifest.permission.READ_MEDIA_AUDIO else Manifest.permission.READ_EXTERNAL_STORAGE
-    var hasAudioPermission by remember { mutableStateOf(ContextCompat.checkSelfPermission(context, audioPermission) == PackageManager.PERMISSION_GRANTED) }
-    val requestAudioPermission = androidx.activity.compose.rememberLauncherForActivityResult(
-        contract = androidx.activity.result.contract.ActivityResultContracts.RequestPermission()
-    ) { granted ->
-        hasAudioPermission = granted
-        if (granted) {
-            val savedLikes = likedPrefs.getStringSet("liked_ids", emptySet<String>())?.toSet() ?: emptySet<String>()
-            tracks = DeviceMusicLibrary.scan(context, savedLikes)
-            currentTrackIndex = 0
+    val importAudioLauncher = androidx.activity.compose.rememberLauncherForActivityResult(
+        contract = androidx.activity.result.contract.ActivityResultContracts.OpenMultipleDocuments()
+    ) { uris ->
+        val imported = uris.mapNotNull { uri ->
+            runCatching {
+                context.contentResolver.takePersistableUriPermission(uri, android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                DeviceMusicLibrary.fromUri(context, uri, likedPrefs.getStringSet("liked_ids", emptySet<String>())?.toSet() ?: emptySet())
+            }.getOrNull()
+        }
+        if (imported.isNotEmpty()) {
+            val prefs = context.getSharedPreferences("tatsi_imported_audio", android.content.Context.MODE_PRIVATE)
+            val saved = prefs.getStringSet("uris", emptySet<String>())?.toMutableSet() ?: mutableSetOf()
+            imported.forEach { saved.add(it.id) }
+            prefs.edit().putStringSet("uris", saved).apply()
+            val known = tracks.map { it.id }.toSet()
+            tracks = tracks + imported.filterNot { it.id in known }
         }
     }
-    LaunchedEffect(hasAudioPermission) {
-        if (hasAudioPermission) {
-            val savedLikes = likedPrefs.getStringSet("liked_ids", emptySet())?.toSet() ?: emptySet()
-            tracks = DeviceMusicLibrary.scan(context, savedLikes)
-            currentTrackIndex = 0
-        } else {
-            requestAudioPermission.launch(audioPermission)
-        }
+    LaunchedEffect(Unit) {
+        val prefs = context.getSharedPreferences("tatsi_imported_audio", android.content.Context.MODE_PRIVATE)
+        val saved = prefs.getStringSet("uris", emptySet<String>())?.toSet() ?: emptySet()
+        val likes = likedPrefs.getStringSet("liked_ids", emptySet<String>())?.toSet() ?: emptySet()
+        tracks = saved.mapNotNull { raw -> runCatching { DeviceMusicLibrary.fromUri(context, Uri.parse(raw), likes) }.getOrNull() }
     }
-
     // Connect the UI to the service-owned player. The service remains alive beyond Activity recreation.
     LaunchedEffect(context) {
         val token = SessionToken(context, ComponentName(context, com.tatsi.music.playback.TatsiPlaybackService::class.java))
@@ -164,8 +162,7 @@ fun TatsiMainApp(
         val uri = track.audioUri
         val controller = mediaController
         if (controller != null && !uri.isNullOrBlank()) {
-            controller.setMediaItem(MediaItem.Builder().setMediaId(track.id).setUri(Uri.parse(uri))
-                .setMediaMetadata(androidx.media3.common.MediaMetadata.Builder().setTitle(track.title).setArtist(track.artist).build()).build())
+            controller.setMediaItems(tracks.map { t -> MediaItem.Builder().setMediaId(t.id).setUri(Uri.parse(t.audioUri!!)).setMediaMetadata(androidx.media3.common.MediaMetadata.Builder().setTitle(t.title).setArtist(t.artist).build()).build() }, currentTrackIndex, 0L)
             controller.prepare(); controller.play(); progress = 0f
         } else {
             isPlaying = false
@@ -259,9 +256,8 @@ fun TatsiMainApp(
                         playlists = playlists,
                         currentTrack = currentTrack,
                         isPlaying = isPlaying,
-                        onSelectTrack = { selected ->
-                            playTrack(tracks.indexOfFirst { it.id == selected.id }.coerceAtLeast(0))
-                        },
+                        onSelectTrack = { selected -> playTrack(tracks.indexOfFirst { it.id == selected.id }.coerceAtLeast(0)) },
+                        onImportMusic = { importAudioLauncher.launch(arrayOf("audio/*")) },
                         onToggleLike = { target ->
                             tracks = tracks.map { if (it.id == target.id) it.copy(isLiked = !it.isLiked) else it }
                             likedPrefs.edit().putStringSet("liked_ids", tracks.filter { it.isLiked }.map { it.id }.toSet()).apply()
@@ -320,12 +316,8 @@ fun TatsiMainApp(
                         if (c != null && c.duration > 0L) c.seekTo((c.duration * progress).toLong())
                     },
                     onTogglePlay = { togglePlayback() },
-                    onPrev = {
-                        skipTo(currentTrackIndex - 1)
-                    },
-                    onNext = {
-                        skipTo(currentTrackIndex + 1)
-                    },
+                    onPrev = { val c = mediaController; if (c != null) { if (c.currentPosition > 0L) c.seekTo(0L) else if (c.hasPreviousMediaItem()) c.seekToPreviousMediaItem() } },
+                    onNext = { mediaController?.seekToNextMediaItem() ?: skipTo(currentTrackIndex + 1) },
                     onClose = { isNowPlayingOpen = false },
                     onQuickSwitchStyle = {
                         val nextStyle = if (currentStyle == TatsiStyle.PREMIUM) TatsiStyle.WATERCOLOR else TatsiStyle.PREMIUM

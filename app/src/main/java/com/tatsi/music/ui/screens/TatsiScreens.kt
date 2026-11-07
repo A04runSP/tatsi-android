@@ -33,7 +33,8 @@ fun HomeScreen(
     isPlaying: Boolean,
     onSelectTrack: (Track) -> Unit,
     onToggleLike: (Track) -> Unit,
-    onOpenNowPlaying: () -> Unit
+    onOpenNowPlaying: () -> Unit,
+    onImportMusic: () -> Unit
 ) {
     val tokens = LocalTatsiTokens.current
     val categories = listOf("All", "Playlists", "Liked", "Midnight Edit")
@@ -111,14 +112,14 @@ fun HomeScreen(
                     subtitle = "12 songs",
                     motif = MotifType.MISTY_MOUNTAINS,
                     modifier = Modifier.weight(1f),
-                    onClick = { onSelectTrack(tracks[1]) }
+                    onClick = { tracks.getOrNull(1)?.let(onSelectTrack) }
                 )
                 AlbumArtTile(
                     title = "My Library",
                     subtitle = "418 songs",
                     motif = MotifType.CHERRY_BLOSSOM,
                     modifier = Modifier.weight(1f),
-                    onClick = { onSelectTrack(tracks[0]) }
+                    onClick = { tracks.firstOrNull()?.let(onSelectTrack) }
                 )
             }
         }
@@ -149,7 +150,8 @@ fun LibraryScreen(
     currentTrack: Track,
     isPlaying: Boolean,
     onSelectTrack: (Track) -> Unit,
-    onToggleLike: (Track) -> Unit
+    onToggleLike: (Track) -> Unit,
+    onImportMusic: () -> Unit
 ) {
     val tokens = LocalTatsiTokens.current
     LazyColumn(
@@ -164,11 +166,13 @@ fun LibraryScreen(
                 color = tokens.textPrimary
             )
             Text(
-                text = "418 offline songs • Local lossless archive",
+                text = "${tracks.size} imported tracks",
                 style = MaterialTheme.typography.bodyMedium,
                 color = tokens.textMuted
             )
             Spacer(modifier = Modifier.height(8.dp))
+            Button(onClick = onImportMusic) { Icon(Icons.Default.Add, contentDescription = null); Spacer(Modifier.width(8.dp)); Text("Import Music") }
+            if (tracks.isEmpty()) Text("Your library is empty. Import audio files to begin.", color = tokens.textMuted, modifier = Modifier.padding(vertical = 24.dp))
         }
 
         items(tracks, key = { it.id }) { track ->
