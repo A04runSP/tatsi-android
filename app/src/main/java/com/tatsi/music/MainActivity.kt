@@ -275,7 +275,8 @@ fun TatsiMainApp(
                         onToggleLike = { target ->
                             tracks = tracks.map { if (it.id == target.id) it.copy(isLiked = !it.isLiked) else it }
                             likedPrefs.edit().putStringSet("liked_ids", tracks.filter { it.isLiked }.map { it.id }.toSet()).apply()
-                        }
+                        },
+                        onImportMusic = { importAudioLauncher.launch(arrayOf("audio/*")) }
                     )
 
                     AppTab.PLAYLISTS -> PlaylistsScreen(
