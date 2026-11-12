@@ -56,6 +56,12 @@ fun HomeScreen(
                 fontStyle = FontStyle.Italic,
                 color = tokens.textMuted
             )
+            Spacer(modifier = Modifier.height(10.dp))
+            Button(onClick = onImportMusic) {
+                Icon(Icons.Default.Add, contentDescription = null)
+                Spacer(Modifier.width(8.dp))
+                Text("Import Music")
+            }
         }
 
         item {
@@ -116,7 +122,7 @@ fun HomeScreen(
                 )
                 AlbumArtTile(
                     title = "My Library",
-                    subtitle = "418 songs",
+                    subtitle = "${tracks.size} imported",
                     motif = MotifType.CHERRY_BLOSSOM,
                     modifier = Modifier.weight(1f),
                     onClick = { tracks.firstOrNull()?.let(onSelectTrack) }
